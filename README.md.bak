@@ -33,14 +33,14 @@ The system uses 4 AI agents that work together to plan a complete trip automatic
 
 Open the terminal inside the project folder and run:
 
-		python -m venv langgraph_env3
+python -m venv langgraph_env3
 
 
 Now activate the environment:
 
-#### Windows
+## Windows
 
-		langgraph_env3\Scripts\activate
+langgraph_env3\Scripts\activate
 
 
 #### YouTube Tuturial (Hindi) - https://youtu.be/ctHby5vhDqg
@@ -51,9 +51,9 @@ Now activate the environment:
 
 Run the following command:
 
-		pip install langgraph langchain langchain-openai langchain-groq langchain-community langchain-tavily psycopg[binary] psycopg_pool python-dotenv tavily-python requests streamlit
+pip install langgraph langchain langchain-openai langchain-groq langchain-community langchain-tavily psycopg[binary] psycopg_pool python-dotenv tavily-python requests streamlit
 
-		pip install -U "psycopg[binary,pool]"  langgraph-checkpoint-postgres
+pip install -U "psycopg[binary,pool]"  langgraph-checkpoint-postgres
 
 ---
 
@@ -118,26 +118,26 @@ https://aviationstack.com
 
 # Step 7: Run the Application
 
-#### Run Multi-Agent System in Terminal
+## Run Multi-Agent System in Terminal
 
-		python main.py
+python main.py
 
 
 This will test the multi-agent system through the terminal.
 
 ---
 
-#### Run Streamlit Web App
+## Run Streamlit Web App
 
 
-		streamlit run frontend.py
+streamlit run frontend.py
 
 
 This will launch the Multi-Agent AI web application.
 
 ---
 
-#### Example Prompt
+# Example Prompt
 
 Plan a complete 7 days Japan trip including flights, hotels and sightseeing under 2 lakhs.
 
