@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --primary-blue: #7D9AF6;
+  --light-blue: #A4BDF9;
+  --soft-cream: #FFF3C6;
+  --bg-cream: #FFFDF7;
+  --card-white: #FFFFFF;
+  --border-color: #E7EAF6;
+  --text-main: #1F2937;
+  --text-secondary: #6B7280;
+  --success-green: #34D399;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: #FFFDF7;
+  color: #1F2937;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #FFFDF7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #A4BDF9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7D9AF6;
+}
+
+/* Glassmorphism utility */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #E7EAF6;
+}
+
+.glass-pill {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #E7EAF6;
+}
+
+/* Ambient gradient background blobs */
+.ambient-blob-1 {
+  position: fixed;
+  top: -100px;
+  right: -100px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(164, 189, 249, 0.25) 0%, rgba(255, 243, 198, 0.15) 50%, rgba(255, 253, 247, 0) 70%);
+  filter: blur(60px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.ambient-blob-2 {
+  position: fixed;
+  bottom: -150px;
+  left: -100px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(255, 243, 198, 0.3) 0%, rgba(125, 154, 246, 0.15) 50%, rgba(255, 253, 247, 0) 70%);
+  filter: blur(70px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Shimmer Button Effect */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.btn-shimmer {
+  background: linear-gradient(135deg, #7D9AF6 0%, #A4BDF9 50%, #7D9AF6 100%);
+  background-size: 200% auto;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-shimmer:hover {
+  background-position: right center;
+}
+
+/* Pulse Glow Green Indicator */
+@keyframes greenPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 8px rgba(52, 211, 153, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  }
+}
+
+.pulse-green {
+  animation: greenPulse 2s infinite;
+}

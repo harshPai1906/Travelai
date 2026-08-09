@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+langgraph
+langchain
+langchain-groq
+langchain-community
+langchain-tavily
+tavily-python
+requests
+python-dotenv
+psycopg[binary]
+resend
