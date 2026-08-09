@@ -240,25 +240,22 @@ function parseQueryRoute(query = '') {
   }
 
   // Step 5: Smart Defaults
+  const dynDest = extractDestinationFromQuery(query);
+  if (!arrCity && dynDest) {
+    arrCity = dynDest.toUpperCase();
+  }
+
   if (!depCode && arrCode) {
     depCity = arrCode !== "BOM" ? "MUMBAI" : "DELHI";
     depCode = arrCode !== "BOM" ? "BOM" : "DEL";
   }
-  if (!arrCode && depCode) {
-    arrCity = depCode !== "GOI" ? "GOA" : "DELHI";
-    arrCode = depCode !== "GOI" ? "GOI" : "DEL";
-  }
 
-  if (!depCode) { depCity = "MUMBAI"; depCode = "BOM"; }
-  if (!arrCode) { arrCity = "DELHI"; arrCode = "DEL"; }
+  if (!depCity) { depCity = "MUMBAI"; depCode = "BOM"; }
+  if (!arrCity) { arrCity = "DESTINATION"; arrCode = "DEST"; }
 
   // Collision Prevention
-  if (depCode === arrCode) {
-    if (depCode === "GOI") {
-      depCity = "MUMBAI"; depCode = "BOM";
-    } else {
-      depCity = "DELHI"; depCode = "DEL";
-    }
+  if (depCode && arrCode && depCode === arrCode) {
+    depCity = "MUMBAI"; depCode = "BOM";
   }
 
   return { depCity, depCode, arrCity, arrCode };
@@ -524,9 +521,9 @@ function getHotelImage(query = '', index = 0) {
 }
 
 // Parse live hotel markdown from Tavily API
-function parseHotels(hotelText, query) {
+function parseHotels(hotelText, query, resultsDestination) {
+  const destName = resultsDestination || extractDestinationFromQuery(query) || "Destination";
   const route = parseQueryRoute(query);
-  const destName = route.arrCity || query;
   const origName = route.depCity || '';
 
   if (hotelText && (hotelText.includes('http') || hotelText.includes('['))) {
@@ -565,7 +562,7 @@ function parseHotels(hotelText, query) {
         location: destName || "Central Location",
         snippet: snippet.replace(/^\d+\.\s*/, '').replace(/[\*\[\]]/g, '').slice(0, 180) + '...',
         url: url,
-        image: getHotelImage(query, idx),
+        image: getHotelImage(destName, idx),
         price: "Live Rate Tracked"
       });
       idx++;
@@ -574,37 +571,11 @@ function parseHotels(hotelText, query) {
     if (parsed.length > 0) return parsed;
   }
 
-  // Destination-based dynamic fallback hotels strictly based on parsed destination city
-  const dest = (route.arrCity || '').toLowerCase();
-
-  if (dest.includes('goa')) {
-    return [
-      { name: "Taj Exotica Resort & Spa, Benaulim", type: "5-Star Luxury Beachfront Resort", rating: 4.9, location: "Benaulim Beach, South Goa", price: "₹16,500 / night", url: "https://www.booking.com", image: getHotelImage(query, 0), snippet: "Mediterranean-style luxury 56-acre resort set along Benaulim Beach with fine dining & golf." },
-      { name: "W Goa, Vagator Beach", type: "5-Star Lifestyle Beach Resort", rating: 4.8, location: "Vagator Beachfront, North Goa", price: "₹18,200 / night", url: "https://www.tripadvisor.com", image: getHotelImage(query, 1), snippet: "Chic luxury resort perched on Vagator beach with Rock Pool sunsets, spa & vibrant lounges." },
-      { name: "Grand Hyatt Goa", type: "5-Star Heritage Bay Resort", rating: 4.7, location: "Bambolim Bay, North Goa", price: "₹14,000 / night", url: "https://www.expedia.com", image: getHotelImage(query, 2), snippet: "17th-century Indo-Portuguese palace resort overlooking Bambolim Bay with lush gardens." }
-    ];
-  }
-
-  if (dest.includes('paris')) {
-    return [
-      { name: "Le Bristol Paris", type: "5-Star Palace Hotel", rating: 4.9, location: "8th Arrondissement, Paris", price: "€950 / night", url: "https://www.booking.com", image: getHotelImage(query, 0), snippet: "Luxury palace hotel with 3-Michelin starred dining and rooftop garden pool." },
-      { name: "Hotel Joyce - Astotel", type: "4-Star Boutique Hotel", rating: 4.8, location: "9th Arr. Opera, Paris", price: "€210 / night", url: "https://www.tripadvisor.com", image: getHotelImage(query, 1), snippet: "Charming boutique hotel located minutes from Montmartre and Sacré-Cœur." },
-      { name: "Hôtel Plaza Athénée", type: "5-Star Luxury Fashion Stay", rating: 4.9, location: "Avenue Montaigne, Paris", price: "€1,100 / night", url: "https://www.booking.com", image: getHotelImage(query, 2), snippet: "Iconic luxury hotel overlooking the Eiffel Tower on the avenue of Haute Couture." }
-    ];
-  }
-
-  if (dest.includes('mumbai')) {
-    return [
-      { name: "The Taj Mahal Palace, Mumbai", type: "5-Star Luxury Heritage", rating: 4.9, location: "Colaba, South Mumbai (Sea View)", price: "₹18,500 / night", url: "https://www.tripadvisor.com", image: getHotelImage(query, 0), snippet: "Iconic 120-year luxury landmark facing the Gateway of India with fine dining restaurants and luxury spa." },
-      { name: "JW Marriott Mumbai Juhu", type: "5-Star Beach Resort", rating: 4.8, location: "Juhu Beachfront, Mumbai", price: "₹14,200 / night", url: "https://www.booking.com", image: getHotelImage(query, 1), snippet: "Luxury beachfront resort with infinity pools overlooking the Arabian Sea and award-winning dining." },
-      { name: "Fairfield By Marriott Mumbai Airport", type: "4-Star Executive Hotel", rating: 4.7, location: "Near BOM Airport, Mumbai", price: "₹7,800 / night", url: "https://www.expedia.com", image: getHotelImage(query, 2), snippet: "Contemporary executive hotel with rooftop pool and seamless airport connectivity." }
-    ];
-  }
-
+  // Dynamic accommodation fallback strictly for the requested destination
   return [
-    { name: `Grand Luxury Palace & Resort in ${destName}`, type: "5-Star Luxury Heritage Stay", rating: 4.9, location: destName, price: "Best Rate Tracked", url: "https://www.booking.com", image: getHotelImage(query, 0), snippet: `Iconic luxury resort in ${destName} featuring ocean/city panorama suites, fine dining & luxury spa.` },
-    { name: `Boutique Executive Stay in ${destName}`, type: "4-Star Modern Boutique Hotel", rating: 4.8, location: destName, price: "Best Price Tracked", url: "https://www.tripadvisor.com", image: getHotelImage(query, 1), snippet: `Charming central accommodation in ${destName} located close to prime cultural hotspots & shopping.` },
-    { name: `Executive Suites in ${destName}`, type: "5-Star Scenic Bay & Spa Resort", rating: 4.7, location: destName, price: "Best Price Tracked", url: "https://www.expedia.com", image: getHotelImage(query, 2), snippet: `Serene central resort with infinity pool decks, tropical gardens & high-tier guest amenities in ${destName}.` }
+    { name: `Grand Luxury Resort & Spa in ${destName}`, type: "5-Star Luxury Heritage Stay", rating: 4.9, location: destName, price: "Best Rate Tracked", url: "https://www.booking.com", image: getHotelImage(destName, 0), snippet: `Premier luxury accommodation in ${destName} featuring panoramic views, guest suites, fine dining & spa.` },
+    { name: `Boutique Executive Hotel in ${destName}`, type: "4-Star Modern Boutique Hotel", rating: 4.8, location: destName, price: "Best Price Tracked", url: "https://www.tripadvisor.com", image: getHotelImage(destName, 1), snippet: `Charming central accommodation in ${destName} located close to top sights & cultural hotspots.` },
+    { name: `Scenic Suites & Villa in ${destName}`, type: "5-Star Scenic Resort", rating: 4.7, location: destName, price: "Best Price Tracked", url: "https://www.expedia.com", image: getHotelImage(destName, 2), snippet: `Serene retreat in ${destName} offering garden suites, mountain/city views & high-tier amenities.` }
   ];
 }
 
@@ -775,7 +746,7 @@ export default function ResultsView({ results, query, onReset }) {
   // Confetti celebration animation removed per user preference
 
   const parsedFlights = parseFlights(results?.flight_results, query);
-  const parsedHotels = parseHotels(results?.hotel_results, query);
+  const parsedHotels = parseHotels(results?.hotel_results, query, results?.destination);
   const showFlights = Boolean(results?.flight_results && results.flight_results.trim().length > 0 && isInterCityRoute(query));
 
   const handleShare = () => {

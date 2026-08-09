@@ -6,8 +6,8 @@ from tavily import TavilyClient
 load_dotenv()
 
 def tavily_search(query: str) -> str:
-    api_key = os.getenv("TAVILY_API_KEY")
-    if not api_key:
+    api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    if not api_key or "your_" in api_key.lower() or "placeholder" in api_key.lower():
         return ""
 
     try:
@@ -40,8 +40,8 @@ def tavily_search(query: str) -> str:
         return ""
 
 def tavily_search_places(destination: str) -> str:
-    api_key = os.getenv("TAVILY_API_KEY")
-    if not api_key:
+    api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    if not api_key or "your_" in api_key.lower() or "placeholder" in api_key.lower():
         return ""
 
     try:

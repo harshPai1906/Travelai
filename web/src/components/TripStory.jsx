@@ -121,17 +121,6 @@ function ActivityCard({ activity, index, isLeft }) {
                 </div>
               </div>
 
-              {/* Cost Badge */}
-              {activity.estimated_cost > 0 && (
-                <span className="shrink-0 px-2.5 py-1 rounded-xl bg-[#FFFDF7] border border-[#E7EAF6] text-xs font-bold text-[#1F2937]">
-                  {formatCost(activity.estimated_cost, activity.currency)}
-                </span>
-              )}
-              {(!activity.estimated_cost || activity.estimated_cost === 0) && (
-                <span className="shrink-0 px-2.5 py-1 rounded-xl bg-[#34D399]/10 text-xs font-bold text-[#34D399]">
-                  Free
-                </span>
-              )}
             </div>
 
             {/* Description */}
@@ -457,13 +446,8 @@ export default function TripStory({ tripStoryJson, query, onReset }) {
               </p>
 
               <div className="flex flex-wrap items-center gap-3 pt-2">
-                {trip.budget?.amount > 0 && (
-                  <span className="px-3 py-1.5 rounded-xl bg-white/15 backdrop-blur-md text-xs font-bold text-white border border-white/20">
-                    💰 {formatCost(trip.budget.amount, trip.budget.currency)}
-                  </span>
-                )}
                 <span className="px-3 py-1.5 rounded-xl bg-white/15 backdrop-blur-md text-xs font-bold text-white border border-white/20">
-                  📅 {totalDays} Days
+                  📅 {totalDays} Days Journey
                 </span>
               </div>
             </div>

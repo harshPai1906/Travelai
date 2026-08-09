@@ -35,10 +35,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+groq_key = os.getenv("GROQ_API_KEY", "")
 
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile"
-)
+try:
+    if groq_key:
+        llm = ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=groq_key)
+    else:
+        llm = None
+except Exception as e:
+    print(f"[Warning] ChatGroq initialization warning: {e}")
+    llm = None
 
 def sanitize_activity_text(text: str) -> bool:
     if not text:
@@ -77,31 +83,34 @@ def validate_hotel_results(hotel_text: str, destination: str, origin: str) -> tu
     return "\n\n".join(valid_blocks), valid_blocks, rejected_blocks
 
 def safe_llm_invoke(messages, fallback_text=""):
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not groq_key or "your_" in groq_key.lower() or "placeholder" in groq_key.lower():
+        return AIMessage(content=fallback_text)
+
     models = [
         "llama-3.1-8b-instant",
         "llama-3.3-70b-versatile"
     ]
-    for attempt in range(3):
-        for m in models:
-            try:
-                temp_llm = ChatGroq(model=m, temperature=0.3)
-                res = temp_llm.invoke(messages)
-                if res and res.content and res.content.strip():
-                    return res
-            except Exception as e:
-                err_str = str(e)
-                print(f"[Notice] Groq LLM model '{m}' error: {e}")
-                if "429" in err_str or "rate_limit" in err_str.lower():
-                    time.sleep(1.5)
-                continue
-        time.sleep(1)
-    print(f"[Notice] Groq LLM fallback response used.")
+    for m in models:
+        try:
+            temp_llm = ChatGroq(model=m, temperature=0.3, groq_api_key=groq_key, request_timeout=8.0)
+            res = temp_llm.invoke(messages)
+            if res and res.content and res.content.strip():
+                return res
+        except Exception as e:
+            print(f"[Notice] Groq LLM model '{m}' error: {e}")
+            continue
+
     return AIMessage(content=fallback_text)
 
 def clean_dest_name(text: str) -> Optional[str]:
     if not text: return None
     s = text.strip()
-    s = re.sub(r'^(?:i\s+want\s+to\s+|want\s+to\s+|go\s+to\s+|visit\s+|travel\s+to\s+|heading\s+to\s+|plan\s+a?\s*trip\s+to\s+)', '', s, flags=re.IGNORECASE).strip()
+    s = re.sub(r'^(?:i\s+want\s+to\s+|want\s+to\s+|go\s+to\s+|visit\s+|travel\s+to\s+|heading\s+to\s+|plan\s+a?\s*trip\s+to\s+|trip\s+to\s+|plan\s+|explore\s+)', '', s, flags=re.IGNORECASE).strip()
+    s = re.sub(r'\s*(?:for\s+)?\d+\s*days?.*$', '', s, flags=re.IGNORECASE).strip()
+    words = s.split()
+    if len(words) > 4:
+        s = " ".join(words[:4])
     if not s or s.lower() in ["the", "a", "an", "days", "day", "trip", "plan", "somewhere"]:
         return None
     return s.title()
@@ -122,30 +131,29 @@ def parse_travel_intent(query: str) -> dict:
                 break
 
     dep_c, dep_code, arr_c, arr_code = extract_route_cities(query)
-    
     has_explicit_origin = dep_c is not None and dep_code is not None
 
-    dest = arr_c
-    match_in = re.search(r'\bin\s+([A-Za-z\s]+?)(?:\s+for|\s+\d+|\s*$)', query, re.IGNORECASE)
-    if match_in:
-        cand = match_in.group(1).strip()
-        if cand.lower() not in ["the", "a", "an", "days", "day", "trip", "plan"]:
-            dest = cand
-    match_to = re.search(r'\bto\s+([A-Za-z\s]+?)(?:\s+for|\s+\d+|\s*$)', query, re.IGNORECASE)
-    if match_to:
-        cand = match_to.group(1).strip()
-        if cand.lower() not in ["the", "a", "an", "days", "day", "trip", "plan"]:
-            dest = cand
+    to_match = re.search(r'(?:from\s+)?(.+?)\s+(?:to|-)\s+(.+)', query, re.IGNORECASE)
+    dest_candidate = None
+    orig_candidate = None
+    if to_match and has_explicit_origin:
+        orig_candidate = clean_dest_name(to_match.group(1))
+        dest_candidate = clean_dest_name(to_match.group(2))
+    else:
+        dest_candidate = clean_dest_name(query) or arr_c
 
-    dest_final = clean_dest_name(dest)
-    orig_final = dep_c.title() if has_explicit_origin and dep_c else None
+    if dest_candidate:
+        dest_candidate = re.sub(r'\s*(?:for\s+)?\d+\s*days?$', '', dest_candidate, flags=re.IGNORECASE).strip()
+
+    orig_final = orig_candidate or (dep_c.title() if has_explicit_origin and dep_c else None)
+    dest_final = dest_candidate.title() if dest_candidate else "Destination"
 
     return {
         "user_query": query,
         "origin": orig_final,
         "destination": dest_final,
         "duration_days": num_days,
-        "flight_required": has_explicit_origin
+        "flight_required": bool(has_explicit_origin and orig_final)
     }
 
 class TravelState(TypedDict):

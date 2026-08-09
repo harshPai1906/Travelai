@@ -1,4 +1,5 @@
 import os
+import time
 import re
 import hashlib
 import secrets
@@ -319,7 +320,8 @@ def generate_travel_plan(req: TravelRequest):
     if not req.user_query.strip():
         raise HTTPException(status_code=400, detail="User query cannot be empty")
 
-    config = {"configurable": {"thread_id": req.thread_id}}
+    unique_thread_id = f"{req.thread_id}_{int(time.time() * 1000)}"
+    config = {"configurable": {"thread_id": unique_thread_id}}
 
     intent = parse_travel_intent(req.user_query)
 
