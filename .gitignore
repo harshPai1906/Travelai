@@ -1,0 +1,32 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Node & Web
+node_modules/
+web/node_modules/
+web/dist/
+web/.vite/
+
+# OS & Logs
+.DS_Store
+Thumbs.db
+*.log
