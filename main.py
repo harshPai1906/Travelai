@@ -63,11 +63,15 @@ def sanitize_activity_text(text: str) -> bool:
     return True
 
 def validate_hotel_results(hotel_text: str, destination: str, origin: str) -> tuple[str, list, list]:
-    if not hotel_text or "No live hotel results found" in hotel_text:
+    if not hotel_text or "No live hotel results found" in hotel_text or "No live accommodation results found" in hotel_text:
         return "", [], []
 
-    dest_lower = destination.lower()
-    orig_lower = origin.lower() if origin else ""
+    dest_lower = destination.lower().strip()
+    orig_lower = origin.lower().strip() if origin else ""
+
+    # Common cities that should never appear as hotels unless destination is that city
+    unrelated_cities = ["goa", "mumbai", "delhi", "paris", "london", "tokyo", "new york", "dubai", "rome", "bali"]
+    unrelated_cities = [c for c in unrelated_cities if c not in dest_lower]
 
     blocks = hotel_text.split('\n\n')
     valid_blocks = []
@@ -75,10 +79,19 @@ def validate_hotel_results(hotel_text: str, destination: str, origin: str) -> tu
 
     for b in blocks:
         b_lower = b.lower()
+        # Reject if block belongs strictly to origin city when origin != destination
         if orig_lower and orig_lower != dest_lower and orig_lower in b_lower and dest_lower not in b_lower:
             rejected_blocks.append(b)
-        else:
-            valid_blocks.append(b)
+            continue
+
+        # Reject if block contains unrelated major destination city that does not match target destination
+        has_unrelated_city = any(c in b_lower for c in unrelated_cities if c not in b_lower.replace(c, ''))
+        # If block mentions an unrelated city and NOT target destination, reject it
+        if has_unrelated_city and dest_lower not in b_lower:
+            rejected_blocks.append(b)
+            continue
+
+        valid_blocks.append(b)
 
     return "\n\n".join(valid_blocks), valid_blocks, rejected_blocks
 
@@ -106,7 +119,27 @@ def safe_llm_invoke(messages, fallback_text=""):
 def clean_dest_name(text: str) -> Optional[str]:
     if not text: return None
     s = text.strip()
-    s = re.sub(r'^(?:i\s+want\s+to\s+|want\s+to\s+|go\s+to\s+|visit\s+|travel\s+to\s+|heading\s+to\s+|plan\s+a?\s*trip\s+to\s+|trip\s+to\s+|plan\s+|explore\s+)', '', s, flags=re.IGNORECASE).strip()
+    prefixes = [
+        r'^\s*i\s+want\s+to\s+go\s+to\s+',
+        r'^\s*i\s+want\s+to\s+visit\s+',
+        r'^\s*i\s+want\s+to\s+travel\s+to\s+',
+        r'^\s*i\s+want\s+to\s+',
+        r'^\s*want\s+to\s+go\s+to\s+',
+        r'^\s*want\s+to\s+visit\s+',
+        r'^\s*want\s+to\s+',
+        r'^\s*plan\s+a\s+trip\s+to\s+',
+        r'^\s*plan\s+trip\s+to\s+',
+        r'^\s*plan\s+to\s+visit\s+',
+        r'^\s*trip\s+to\s+',
+        r'^\s*travel\s+to\s+',
+        r'^\s*heading\s+to\s+',
+        r'^\s*go\s+to\s+',
+        r'^\s*visit\s+',
+        r'^\s*explore\s+'
+    ]
+    for p in prefixes:
+        s = re.sub(p, '', s, flags=re.IGNORECASE).strip()
+    
     s = re.sub(r'\s*(?:for\s+)?\d+\s*days?.*$', '', s, flags=re.IGNORECASE).strip()
     words = s.split()
     if len(words) > 4:
@@ -116,31 +149,85 @@ def clean_dest_name(text: str) -> Optional[str]:
     return s.title()
 
 def parse_travel_intent(query: str) -> dict:
-    query_lower = query.lower()
+    query_clean = query.strip()
+
+    # 1. Try AI Intent Parser via LLM
+    ai_prompt = f"""You are a strict travel intent parser. Parse the user query into structured JSON.
+
+User Query: "{query_clean}"
+
+Return ONLY a raw JSON object with this exact structure:
+{{
+  "origin": "<city name if explicitly stated as departure location in prompt, else null>",
+  "destination": "<target destination city/region/country name>",
+  "country": "<country name for destination>",
+  "duration_days": <integer between 1 and 12>,
+  "multi_destination": <boolean>,
+  "flight_required": <boolean true ONLY if origin is NOT null>
+}}
+
+CRITICAL RULES:
+1. If no explicit departure location is mentioned (e.g. "ooty 4 days", "I want to visit Ooty for 3 days", "plan a trip to Paris for 5 days", "7 days in Japan"), "origin" MUST be null and "flight_required" MUST be false.
+2. DO NOT invent an origin city. DO NOT assume user's current location.
+3. Extract duration in days (1 to 12). Default to 3 if not specified.
+"""
+    ai_resp = safe_llm_invoke([
+        SystemMessage(content="You are a strict JSON-only travel parser. Return raw JSON only with no markdown wrapping."),
+        HumanMessage(content=ai_prompt)
+    ], fallback_text="")
+
+    if ai_resp and ai_resp.content and ai_resp.content.strip():
+        raw_json = ai_resp.content.strip()
+        if raw_json.startswith("```"): raw_json = raw_json.split("\n", 1)[-1]
+        if raw_json.endswith("```"): raw_json = raw_json.rsplit("```", 1)[0]
+        raw_json = raw_json.strip()
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, dict) and parsed.get("destination"):
+                dest = str(parsed["destination"]).strip().title()
+                orig = str(parsed["origin"]).strip().title() if parsed.get("origin") else None
+                country = str(parsed.get("country", "International")).strip().title()
+                dur = max(1, min(12, int(parsed.get("duration_days", 3))))
+                flight_req = bool(orig and orig.lower() != "null")
+                if not flight_req: orig = None
+
+                return {
+                    "user_query": query,
+                    "origin": orig,
+                    "destination": dest,
+                    "country": country,
+                    "duration_days": dur,
+                    "multi_destination": bool(parsed.get("multi_destination", False)),
+                    "flight_required": flight_req
+                }
+        except Exception as e:
+            print(f"[Notice] AI Intent Parser JSON parse fallback: {e}")
+
+    # 2. Rule-based Fallback Parser
+    query_lower = query_clean.lower()
     
-    # Extract duration (defaults to 3 if not specified)
     match_d = re.search(r'(\d+)\s*-?\s*(?:day|days)', query_lower)
     num_days = 3
     if match_d:
-        num_days = max(1, min(30, int(match_d.group(1))))
+        num_days = max(1, min(12, int(match_d.group(1))))
     else:
-        word_map = { "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10 }
+        word_map = { "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12 }
         for w, v in word_map.items():
             if re.search(rf'\b{w}\s*-?\s*(?:day|days)\b', query_lower):
                 num_days = v
                 break
 
-    dep_c, dep_code, arr_c, arr_code = extract_route_cities(query)
+    dep_c, dep_code, arr_c, arr_code = extract_route_cities(query_clean)
     has_explicit_origin = dep_c is not None and dep_code is not None
 
-    to_match = re.search(r'(?:from\s+)?(.+?)\s+(?:to|-)\s+(.+)', query, re.IGNORECASE)
+    to_match = re.search(r'(?:from\s+)?(.+?)\s+(?:to|-)\s+(.+)', query_clean, re.IGNORECASE)
     dest_candidate = None
     orig_candidate = None
     if to_match and has_explicit_origin:
         orig_candidate = clean_dest_name(to_match.group(1))
         dest_candidate = clean_dest_name(to_match.group(2))
     else:
-        dest_candidate = clean_dest_name(query) or arr_c
+        dest_candidate = clean_dest_name(query_clean) or arr_c
 
     if dest_candidate:
         dest_candidate = re.sub(r'\s*(?:for\s+)?\d+\s*days?$', '', dest_candidate, flags=re.IGNORECASE).strip()
@@ -149,10 +236,12 @@ def parse_travel_intent(query: str) -> dict:
     dest_final = dest_candidate.title() if dest_candidate else "Destination"
 
     return {
-        "user_query": query,
+        "user_query": query_clean,
         "origin": orig_final,
         "destination": dest_final,
+        "country": "International",
         "duration_days": num_days,
+        "multi_destination": bool(orig_final and dest_final),
         "flight_required": bool(has_explicit_origin and orig_final)
     }
 
@@ -161,6 +250,7 @@ class TravelState(TypedDict):
     user_query: str
     origin: Optional[str]
     destination: Optional[str]
+    country: Optional[str]
     duration_days: int
     flight_required: bool
     flight_results: str
@@ -188,17 +278,6 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
     if not isinstance(days, list):
         days = []
 
-    # 1. Enforce exact days.length === duration_days
-    if len(days) < duration_days:
-        for i in range(len(days), duration_days):
-            day_num = i + 1
-            days.append({
-                "day": day_num,
-                "title": f"{dest_title} Highlights & Local Exploration",
-                "summary": f"Discover key landmarks, culture, and cuisine in {dest_title}.",
-                "ai_story": f"Day {day_num} invites you to explore iconic attractions and regional culture in {dest_title}.",
-                "activities": []
-            })
     # Enforce days count equals requested duration
     if len(days) < duration_days:
         for missing_d in range(len(days) + 1, duration_days + 1):
@@ -223,8 +302,7 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
                     "name": p.get("name"),
                     "description": p.get("description", f"Explore {p.get('name')} in {dest_title}."),
                     "category": p.get("category", "Landmark"),
-                    "duration_minutes": 120,
-                    "estimated_cost": 300
+                    "duration_minutes": 120
                 })
 
     pool_index = 0
@@ -244,6 +322,10 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
         if not day_obj.get("ai_story") or not sanitize_activity_text(day_obj.get("ai_story")):
             day_obj["ai_story"] = f"Day {day_num} brings memorable experiences across famous landmarks and local culture in {dest_title}."
 
+        # Strip any price strings from ai_story text
+        day_obj["ai_story"] = re.sub(r'₹\s*[\d,]+(?:/night)?', '', day_obj["ai_story"])
+        day_obj["ai_story"] = re.sub(r'\$\s*[\d,]+(?:/night)?', '', day_obj["ai_story"])
+
         activities = day_obj.get("activities", [])
         if not isinstance(activities, list):
             activities = []
@@ -253,8 +335,12 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
             if isinstance(act, dict) and act.get("name"):
                 name = act.get("name", "").strip()
                 desc = act.get("description", "").strip()
-                name_lower = name.lower()
                 
+                # Strip prices from activity text
+                desc = re.sub(r'₹\s*[\d,]+(?:/night)?', '', desc)
+                desc = re.sub(r'\$\s*[\d,]+(?:/night)?', '', desc)
+
+                name_lower = name.lower()
                 is_banned = any(b in name_lower for b in generic_banned)
                 is_duplicate = name_lower in used_names
                 is_clean_name = sanitize_activity_text(name)
@@ -262,14 +348,14 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
 
                 if not is_banned and not is_duplicate and is_clean_name and is_clean_desc:
                     used_names.add(name_lower)
+                    act["description"] = desc
                     valid_activities.append(act)
 
-        default_times = ["08:30 AM", "10:30 AM", "01:30 PM", "04:00 PM", "07:00 PM"]
+        default_times = ["08:30 AM", "11:00 AM", "01:30 PM", "04:00 PM", "07:00 PM"]
 
         # GUARANTEE: Every day MUST have at least 3 unique activities!
         while len(valid_activities) < 3:
             found_cand = False
-            # 1. Try filling from attraction_pool
             while attraction_pool and pool_index < len(attraction_pool) * 6:
                 candidate = attraction_pool[pool_index % len(attraction_pool)]
                 pool_index += 1
@@ -284,25 +370,22 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
                         "description": candidate["description"],
                         "category": candidate.get("category", "Landmark"),
                         "duration_minutes": candidate.get("duration_minutes", 120),
-                        "estimated_cost": candidate.get("estimated_cost", 300),
-                        "currency": "USD",
                         "ai_reason": f"AI selected highlight for {dest_title}."
                     })
                     found_cand = True
                     break
 
-            # 2. Fast dynamic synthesis fallback
             if len(valid_activities) < 3 and not found_cand:
                 act_idx = len(valid_activities)
                 t_str = default_times[act_idx % len(default_times)]
                 if act_idx == 0:
-                    synth_title = f"{dest_title} Morning Heritage Quarter & Historic Landmark"
+                    synth_title = f"{dest_title} Heritage Walk & Central Landmark"
                 elif act_idx == 1:
-                    synth_title = f"{dest_title} Scenic Overlook & Botanical Gardens"
+                    synth_title = f"{dest_title} Scenic Overlook & Botanical Garden"
                 elif act_idx == 2:
-                    synth_title = f"{dest_title} Cultural Artisan Market & Local Dining"
+                    synth_title = f"{dest_title} Cultural Bazaar & Local Culinary Spot"
                 else:
-                    synth_title = f"{dest_title} Day {day_num} Highlight #{act_idx + 1}"
+                    synth_title = f"{dest_title} Day {day_num} Scenic Sight #{act_idx + 1}"
                 
                 if synth_title.lower() not in used_names:
                     used_names.add(synth_title.lower())
@@ -312,8 +395,6 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
                         "description": f"Explore prominent cultural landmarks, historic architecture, and scenic spots in {dest_title}.",
                         "category": "Landmark",
                         "duration_minutes": 120,
-                        "estimated_cost": 300,
-                        "currency": "USD",
                         "ai_reason": f"Destination highlight for {dest_title}."
                     })
 
@@ -324,9 +405,11 @@ def validate_and_repair_itinerary_data(data: dict, destination: str, duration_da
                 act["category"] = "Landmark"
             if not act.get("duration_minutes"):
                 act["duration_minutes"] = 120
-            if "estimated_cost" not in act:
-                act["estimated_cost"] = 300
-            act["currency"] = "USD"
+            # Strip any prices
+            if "estimated_cost" in act:
+                del act["estimated_cost"]
+            if "currency" in act:
+                del act["currency"]
             if not act.get("ai_reason"):
                 act["ai_reason"] = f"Curated highlight for {dest_title}."
 
@@ -362,7 +445,7 @@ def format_itinerary_to_markdown(itinerary_data: dict) -> str:
 
     return "\n".join(markdown_lines)
 
-# 1. Flight Agent
+# 1. Flight Agent — Activate ONLY when explicit origin is present
 def flight_agent(state: TravelState):
     print(f"\n==================== [FLIGHT AGENT DEBUG] ====================")
     print(f"[Flight Agent] started")
@@ -373,7 +456,7 @@ def flight_agent(state: TravelState):
     dest = intent.get("destination")
 
     if not flight_req or not origin or not dest:
-        print(f"[Flight Agent] SKIPPED (destination-only query, origin is None)")
+        print(f"[Flight Agent] SKIPPED (destination-only query, no origin specified)")
         print(f"[Flight Agent] completed")
         print(f"=============================================================\n")
         return {
@@ -396,7 +479,7 @@ def flight_agent(state: TravelState):
         "llm_calls": state.get("llm_calls", 0) + 1
     }
 
-# 2. Hotel Agent — Dynamic AI & Search for Target Destination
+# 2. Hotel Agent — Dynamic AI & Search strictly for Target Destination
 def hotel_agent(state: TravelState):
     print(f"\n==================== [HOTEL AGENT DEBUG] ====================")
     print(f"[Hotel Agent] started")
@@ -406,9 +489,9 @@ def hotel_agent(state: TravelState):
     destination = intent.get("destination")
 
     if not destination:
-        print(f"[Hotel Agent] ERROR: Destination not found in query")
+        print(f"[Hotel Agent] ERROR: Destination not specified")
         return {
-            "hotel_results": "Unable to retrieve travel information right now. Please specify a destination.",
+            "hotel_results": "No live accommodation results found for this destination.",
             "messages": [AIMessage(content="Destination missing")],
             "llm_calls": state.get("llm_calls", 0) + 1
         }
@@ -417,21 +500,26 @@ def hotel_agent(state: TravelState):
     orig_title = origin.title() if origin else ""
 
     print(f"[Hotel Agent] Dynamically searching hotels for '{dest_title}'")
-    search_query = f"Best top rated 4 star and 5 star hotels in {dest_title}"
+    search_query = f"Best top rated luxury 4 star and 5 star hotels in {dest_title}"
     raw_results = tavily_search(search_query)
     validated_text, valid_list, rejected_list = validate_hotel_results(raw_results, dest_title, orig_title)
 
-    # Dynamic AI Fallback if web search returns empty
+    # Dynamic AI Fallback if web search is empty or returned invalid city hotels
     if not validated_text or len(valid_list) == 0:
-        print(f"[Hotel Agent] Web search empty for '{dest_title}'. Asking AI dynamically.")
+        print(f"[Hotel Agent] Web search empty/invalid for '{dest_title}'. Asking AI dynamically.")
         ai_resp = safe_llm_invoke([
-            SystemMessage(content="You are a travel assistant. List 4 real, top-rated hotels in the requested destination with 1-sentence descriptions."),
-            HumanMessage(content=f"List 4 popular luxury and boutique hotels in {dest_title}.")
+            SystemMessage(content=f"You are a travel assistant. List 4 real, top-rated hotels specifically located in {dest_title}. DO NOT list hotels from other cities."),
+            HumanMessage(content=f"List 4 popular luxury and boutique hotels located strictly in {dest_title} with 1-sentence descriptions.")
         ], fallback_text="")
+
         if ai_resp and ai_resp.content.strip():
-            validated_text = f"Top Recommended Hotels in {dest_title}:\n{ai_resp.content.strip()}"
+            ai_validated_text, ai_valid_list, _ = validate_hotel_results(ai_resp.content.strip(), dest_title, orig_title)
+            if ai_valid_list and len(ai_valid_list) > 0:
+                validated_text = f"Top Recommended Hotels in {dest_title}:\n{ai_validated_text}"
+            else:
+                validated_text = f"No live accommodation results found for {dest_title}."
         else:
-            validated_text = f"Top Recommended Hotels in {dest_title}:\n1. **Grand Central Hotel & Spa, {dest_title}**\n   Luxury 5-star accommodations located in central {dest_title}.\n2. **Boutique Heritage Hotel, {dest_title}**\n   Charming boutique stay near top sights in {dest_title}."
+            validated_text = f"No live accommodation results found for {dest_title}."
 
     print(f"[Hotel Agent] completed for '{dest_title}'")
     print(f"=============================================================\n")
@@ -475,7 +563,7 @@ def places_agent(state: TravelState):
                 parts = line[2:].split(":", 1)
                 p_name = parts[0].strip()
                 p_desc = parts[1].strip() if len(parts) > 1 else f"Popular attraction in {dest_title}."
-                if p_name:
+                if p_name and sanitize_activity_text(p_name):
                     discovered_places.append({
                         "name": p_name,
                         "description": p_desc,
@@ -486,7 +574,7 @@ def places_agent(state: TravelState):
     if len(discovered_places) < 5:
         print(f"[Places Agent] Generating additional dynamic places via AI for '{dest_title}'")
         ai_resp = safe_llm_invoke([
-            SystemMessage(content="You are a travel expert. Return raw JSON array of 8 top tourist attractions for the target city: [{\"name\":\"...\", \"description\":\"...\", \"category\":\"...\"}]"),
+            SystemMessage(content=f"You are a travel expert. Return raw JSON array of 8 top tourist attractions located strictly in {dest_title}: [{{\"name\":\"...\", \"description\":\"...\", \"category\":\"...\"}}]"),
             HumanMessage(content=f"Return top 8 tourist attractions and sights in {dest_title}.")
         ], fallback_text="")
         try:
@@ -496,7 +584,7 @@ def places_agent(state: TravelState):
             ai_places = json.loads(raw.strip())
             if isinstance(ai_places, list):
                 for p in ai_places:
-                    if isinstance(p, dict) and p.get("name"):
+                    if isinstance(p, dict) and p.get("name") and sanitize_activity_text(p["name"]):
                         discovered_places.append({
                             "name": p["name"],
                             "description": p.get("description", f"Famous sight in {dest_title}."),
@@ -553,7 +641,6 @@ def itinerary_agent(state: TravelState):
 
     places_data = state.get("places_data", [])
     places_text = state.get("places_results", "")
-    print(f"[Itinerary Agent] Places received: {len(places_data)}")
 
     places_context = ""
     if places_data:
@@ -561,7 +648,6 @@ def itinerary_agent(state: TravelState):
     else:
         places_context = places_text
 
-    # Dynamic Batching Strategy executed IN PARALLEL to prevent AI output truncation and ensure blazing speed
     BATCH_SIZE = 6
     all_days = []
 
@@ -571,8 +657,6 @@ def itinerary_agent(state: TravelState):
         b_end = min(curr + BATCH_SIZE - 1, num_days)
         batches.append((curr, b_end))
         curr = b_end + 1
-
-    print(f"[Itinerary Agent] AI request started (Generating {len(batches)} batch(es) concurrently for {num_days} days in '{dest_title}')...")
 
     def generate_single_batch(b_info):
         b_start, b_end = b_info
@@ -590,9 +674,10 @@ Available Attractions for {dest_title}:
 CRITICAL RULES:
 1. "days" array MUST contain EXACTLY {b_count} items (Day {b_start} to Day {b_end}).
 2. EVERY DAY MUST contain 3 to 5 real, specific places/activities in {dest_title} with specific times (e.g. 08:30 AM, 11:00 AM, 02:00 PM, 04:30 PM, 07:30 PM).
-3. EVERY ACTIVITY MUST BE A DISTINCT REAL PLACE OR ATTRACTION. DO NOT REPEAT ANY PLACE NAME within this batch.
-4. Day titles MUST be place-specific for {dest_title} (e.g. "Day {b_start}: {dest_title} Central Landmarks & Museums"). DO NOT use repetitive generic titles.
-5. Activity descriptions MUST be clean, concise 1-2 sentences (20-35 words max). No raw scraped text, no article headlines, no citations.
+3. EVERY ACTIVITY MUST BE A DISTINCT REAL PLACE OR ATTRACTION. DO NOT REPEAT ANY PLACE NAME.
+4. Day titles MUST be place-specific for {dest_title} (e.g. "Day {b_start}: {dest_title} Central Landmarks & Gardens"). DO NOT use repetitive generic titles.
+5. Activity descriptions MUST be clean, concise 1-2 sentences. NO raw search text, NO article titles ("Title:"), NO markdown headers ("###"), NO SEO copy, NO prices.
+6. ABSOLUTELY NO PRICES or cost amounts anywhere in activity descriptions.
 
 Return ONLY raw JSON:
 {{
@@ -609,8 +694,6 @@ Return ONLY raw JSON:
           "description": "<concise 1-2 sentence summary>",
           "category": "Landmark",
           "duration_minutes": 120,
-          "estimated_cost": 300,
-          "currency": "USD",
           "ai_reason": "<1 sentence why selected>"
         }}
       ]
@@ -642,7 +725,6 @@ Return ONLY raw JSON:
                     pass
             return []
 
-    # Execute all batches in parallel for ultra-fast generation
     start_time = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(batches))) as executor:
         batch_results = list(executor.map(generate_single_batch, batches))
@@ -650,35 +732,24 @@ Return ONLY raw JSON:
     for b_days in batch_results:
         all_days.extend(b_days)
 
-    elapsed_time = time.time() - start_time
-    print(f"[Itinerary Agent] AI response received (Parallel batch completed in {elapsed_time:.2f}s)")
-    print(f"[Itinerary Agent] JSON parsed ({len(all_days)} days collected)")
-
     parsed_data = {
         "destination": dest_title,
         "duration_days": num_days,
         "days": all_days
     }
 
-    print(f"[Itinerary Agent] Validation started")
     validated_data = validate_and_repair_itinerary_data(parsed_data, dest_title, num_days, places_data)
-    print(f"[Itinerary Agent] Validation passed ({len(validated_data['days'])} days fully validated)")
-
     markdown_itinerary = format_itinerary_to_markdown(validated_data)
 
     story_json_obj = {
         "trip": {
             "destination": dest_title,
-            "country": "International",
-            "duration_days": num_days,
-            "budget": { "amount": 150 * num_days, "currency": "USD" }
+            "country": intent.get("country", "International"),
+            "duration_days": num_days
         },
         "days": validated_data["days"]
     }
     trip_story_json_str = json.dumps(story_json_obj, indent=2)
-
-    print(f"[Itinerary Agent] Completed ({num_days}-day itinerary generated for {dest_title})")
-    print(f"=============================================================\n")
 
     return {
         "itinerary": markdown_itinerary,
@@ -726,20 +797,41 @@ Itinerary:
         "llm_calls": state.get("llm_calls", 0) + 1
     }
 
-# 6. Story Agent
+# 6. Story Agent — Price-Free Travel Story Generator
 def story_agent(state: TravelState):
     trip_story_val = state.get("trip_story", "")
-    if not trip_story_val:
-        intent = parse_travel_intent(state.get("user_query", ""))
-        num_days = intent['duration_days']
-        dest_c = intent.get('destination', 'Destination')
+    intent = parse_travel_intent(state.get("user_query", ""))
+    num_days = intent['duration_days']
+    dest_c = intent.get('destination', 'Destination')
+
+    if trip_story_val:
+        try:
+            story_obj = json.loads(trip_story_val)
+            if isinstance(story_obj, dict):
+                # Ensure no budget/price fields exist in story payload
+                if "trip" in story_obj and isinstance(story_obj["trip"], dict):
+                    story_obj["trip"].pop("budget", None)
+                if "days" in story_obj and isinstance(story_obj["days"], list):
+                    for d in story_obj["days"]:
+                        if isinstance(d, dict):
+                            d["ai_story"] = re.sub(r'₹\s*[\d,]+(?:/night)?', '', d.get("ai_story", ""))
+                            d["ai_story"] = re.sub(r'\$\s*[\d,]+(?:/night)?', '', d["ai_story"])
+                            for act in d.get("activities", []):
+                                if isinstance(act, dict):
+                                    act.pop("estimated_cost", None)
+                                    act.pop("currency", None)
+                                    act["description"] = re.sub(r'₹\s*[\d,]+(?:/night)?', '', act.get("description", ""))
+                                    act["description"] = re.sub(r'\$\s*[\d,]+(?:/night)?', '', act["description"])
+                trip_story_val = json.dumps(story_obj, indent=2)
+        except Exception:
+            pass
+    else:
         val_data = validate_and_repair_itinerary_data({}, dest_c, num_days, state.get("places_data", []))
         trip_story_val = json.dumps({
             "trip": {
                 "destination": dest_c,
-                "country": "International",
-                "duration_days": num_days,
-                "budget": { "amount": 15000 * num_days, "currency": "INR" }
+                "country": intent.get("country", "International"),
+                "duration_days": num_days
             },
             "days": val_data["days"]
         }, indent=2)

@@ -315,12 +315,14 @@ def get_current_user(authorization: Optional[str] = Header(None)):
 
 from main import parse_travel_intent
 
+import uuid
+
 @api.post("/api/generate")
 def generate_travel_plan(req: TravelRequest):
     if not req.user_query.strip():
         raise HTTPException(status_code=400, detail="User query cannot be empty")
 
-    unique_thread_id = f"{req.thread_id}_{int(time.time() * 1000)}"
+    unique_thread_id = f"trip_{uuid.uuid4().hex}_{int(time.time() * 1000)}"
     config = {"configurable": {"thread_id": unique_thread_id}}
 
     intent = parse_travel_intent(req.user_query)

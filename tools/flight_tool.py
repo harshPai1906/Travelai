@@ -194,12 +194,6 @@ def extract_route_cities(query):
         # If user did NOT explicitly provide an origin, dep_city and dep_code MUST be None!
         dep_city, dep_code = None, None
 
-    if not arr_code and dep_code:
-        arr_city, arr_code = ("Delhi", "DEL") if dep_code != "DEL" else ("Goa", "GOI")
-
-    if not arr_code:
-        arr_city, arr_code = "Delhi", "DEL"
-
     # Collision Prevention
     if dep_code and arr_code and dep_code == arr_code:
         dep_city, dep_code = None, None

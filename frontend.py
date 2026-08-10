@@ -610,7 +610,8 @@ if generate:
     if not user_query.strip():
         st.warning("Please describe your trip first.")
     else:
-        config = {"configurable": {"thread_id": thread_id}}
+        unique_st_thread = f"st_trip_{int(time.time() * 1000)}"
+        config = {"configurable": {"thread_id": unique_st_thread}}
         collected = {"flight_results": "", "hotel_results": "",
                      "itinerary": "", "final_response": "", "llm_calls": 0}
 

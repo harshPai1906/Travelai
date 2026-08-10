@@ -51,13 +51,6 @@ function formatDuration(minutes) {
   return m > 0 ? `${h}h ${m}m` : `${h} hour${h > 1 ? 's' : ''}`;
 }
 
-// ── Format cost ──────────────────────────────────────────────────────────────
-function formatCost(cost, currency = 'INR') {
-  if (!cost || cost === 0) return 'Free';
-  if (currency === 'INR') return `₹${cost.toLocaleString('en-IN')}`;
-  return `${currency} ${cost.toLocaleString()}`;
-}
-
 // ── Animated scroll-in wrapper ──────────────────────────────────────────────
 function ScrollReveal({ children, delay = 0, className = '' }) {
   const ref = useRef(null);
@@ -298,8 +291,7 @@ function createFallbackStoryData(query = 'Destination') {
     trip: {
       destination: dest,
       country: "Travel Story",
-      duration_days: numDays,
-      budget: { amount: 12000 * numDays, currency: "INR" }
+      duration_days: numDays
     },
     days: generatedDays
   };
@@ -376,7 +368,7 @@ export default function TripStory({ tripStoryJson, query, onReset }) {
 
   const handleDownload = () => {
     let md = `# ✨ Trip Story: ${trip.destination}\n`;
-    md += `**${totalDays}-Day Journey** | Budget: ${formatCost(trip.budget?.amount, trip.budget?.currency)}\n\n---\n\n`;
+    md += `**${totalDays}-Day Journey in ${trip.destination}**\n\n---\n\n`;
     days.forEach(d => {
       md += `## Day ${d.day}: ${d.title}\n\n`;
       if (d.ai_story) md += `> ${d.ai_story}\n\n`;

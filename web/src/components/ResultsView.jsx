@@ -239,23 +239,12 @@ function parseQueryRoute(query = '') {
     }
   }
 
-  // Step 5: Smart Defaults
-  const dynDest = extractDestinationFromQuery(query);
-  if (!arrCity && dynDest) {
-    arrCity = dynDest.toUpperCase();
-  }
+  // Step 4: Check if explicit origin was provided
+  const hasExplicitOrigin = Boolean(matchFrom) || (Boolean(matchTo) && depCode && arrCode && depCode !== arrCode);
 
-  if (!depCode && arrCode) {
-    depCity = arrCode !== "BOM" ? "MUMBAI" : "DELHI";
-    depCode = arrCode !== "BOM" ? "BOM" : "DEL";
-  }
-
-  if (!depCity) { depCity = "MUMBAI"; depCode = "BOM"; }
-  if (!arrCity) { arrCity = "DESTINATION"; arrCode = "DEST"; }
-
-  // Collision Prevention
-  if (depCode && arrCode && depCode === arrCode) {
-    depCity = "MUMBAI"; depCode = "BOM";
+  if (!hasExplicitOrigin) {
+    depCity = null;
+    depCode = null;
   }
 
   return { depCity, depCode, arrCity, arrCode };
@@ -448,97 +437,41 @@ function parseFlights(flightText, query) {
 }
 
 const HOTEL_IMAGE_POOL = [
-  "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&q=80", // Heritage Palace
-  "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=600&q=80", // Beach Resort Infinity Pool
-  "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=600&q=80", // Modern High-Rise Luxury
-  "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=600&q=80", // Tropical Villa & Pool
-  "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80", // Boutique Ocean Suite
-  "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=600&q=80", // Presidential Suite Interior
-  "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=600&q=80", // Luxury Resort Courtyard
-  "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=600&q=80"  // Grand Lobby & Lounge
+  "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&q=80",
+  "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=600&q=80",
+  "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=600&q=80",
+  "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=600&q=80",
+  "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80",
+  "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=600&q=80",
+  "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=600&q=80",
+  "https://images.unsplash.com/photo-1445019980597-93fa8acb246c?w=600&q=80"
 ];
 
-function getHotelImage(query = '', index = 0) {
-  const route = parseQueryRoute(query);
-  const dest = (route.arrCity || '').toLowerCase();
-
-  if (dest.includes('tirupati') || dest.includes('tirumala')) {
-    const tirupatiImages = [
-      "https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80", // Temple View Residency
-      "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&q=80", // Fortune Select Grand Ridge
-      "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=600&q=80"  // Taj Tirupati Luxury Stay
-    ];
-    return tirupatiImages[index % tirupatiImages.length];
+function getHotelImage(hotelName = '', index = 0) {
+  let hash = 0;
+  for (let i = 0; i < hotelName.length; i++) {
+    hash = (hash << 5) - hash + hotelName.charCodeAt(i);
+    hash |= 0;
   }
-
-  if (dest.includes('varanasi') || dest.includes('kashi')) {
-    const varanasiImages = [
-      "https://images.unsplash.com/photo-1561361513-2d000a50f0dc?w=600&q=80", // BrijRama Palace Ghat Stay
-      "https://images.unsplash.com/photo-1548013146-72479768bada?w=600&q=80", // Taj Nadesar Palace
-      "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=600&q=80"  // Heritage Ganges View
-    ];
-    return varanasiImages[index % varanasiImages.length];
-  }
-
-  if (dest.includes('goa')) {
-    const goaImages = [
-      "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=600&q=80", // Benaulim Beach Resort
-      "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=600&q=80", // Vagator Rock Pool
-      "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=600&q=80", // Bambolim Bay Palace
-      "https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=600&q=80"  // Tropical Villa
-    ];
-    return goaImages[index % goaImages.length];
-  }
-
-  if (dest.includes('paris')) {
-    const parisImages = [
-      "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=600&q=80", // Bristol Palace
-      "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&q=80", // Opera Boutique
-      "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=600&q=80"  // Eiffel Suite
-    ];
-    return parisImages[index % parisImages.length];
-  }
-
-  if (dest.includes('japan') || dest.includes('tokyo') || dest.includes('kyoto')) {
-    const japanImages = [
-      "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=600&q=80", // Ryokan Garden
-      "https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=600&q=80", // Tokyo Skyline Hotel
-      "https://images.unsplash.com/photo-1545569341-9eb8b30979d9?w=600&q=80"  // Kyoto Zen Villa
-    ];
-    return japanImages[index % japanImages.length];
-  }
-
-  if (dest.includes('mumbai')) {
-    const mumbaiImages = [
-      "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&q=80", // Taj Palace
-      "https://images.unsplash.com/photo-1582719508461-905c673771fd?w=600&q=80", // Juhu Beachfront
-      "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=600&q=80"  // Airport Executive
-    ];
-    return mumbaiImages[index % mumbaiImages.length];
-  }
-
-  return HOTEL_IMAGE_POOL[index % HOTEL_IMAGE_POOL.length];
+  const idx = Math.abs(hash + index) % HOTEL_IMAGE_POOL.length;
+  return HOTEL_IMAGE_POOL[idx];
 }
 
 // Parse live hotel markdown from Tavily API
 function parseHotels(hotelText, query, resultsDestination) {
-  const destName = resultsDestination || extractDestinationFromQuery(query) || "Destination";
-  const route = parseQueryRoute(query);
-  const origName = route.depCity || '';
+  const destName = resultsDestination || "Destination";
 
-  if (hotelText && (hotelText.includes('http') || hotelText.includes('['))) {
+  if (!hotelText || hotelText.includes("No live accommodation results found")) {
+    return [];
+  }
+
+  if (hotelText && (hotelText.includes('http') || hotelText.includes('[') || hotelText.includes('**'))) {
     const items = hotelText.split('\n\n').filter(b => b.trim());
     const parsed = [];
 
     let idx = 0;
     for (let item of items) {
-      const itemLower = item.toLowerCase();
-      // Filter out items belonging strictly to origin city when origin != destination
-      if (origName && origName.toLowerCase() !== destName.toLowerCase()) {
-        if (itemLower.includes(origName.toLowerCase()) && !itemLower.includes(destName.toLowerCase())) {
-          continue;
-        }
-      }
+      if (item.includes("Top Recommended Hotels")) continue;
 
       const linkMatch = item.match(/\[(.*?)\]\((.*?)\)/);
       let title = "Recommended Hotel";
@@ -555,28 +488,27 @@ function parseHotels(hotelText, query, resultsDestination) {
         if (boldMatch) title = boldMatch[1];
       }
 
-      parsed.push({
-        name: title.replace(/^\d+\.\s*/, '').replace(/[\*\[\]]/g, ''),
-        type: "Recommended Hotel",
-        rating: (4.7 + (idx % 3) * 0.1).toFixed(1),
-        location: destName || "Central Location",
-        snippet: snippet.replace(/^\d+\.\s*/, '').replace(/[\*\[\]]/g, '').slice(0, 180) + '...',
-        url: url,
-        image: getHotelImage(destName, idx),
-        price: "Live Rate Tracked"
-      });
-      idx++;
+      const cleanTitle = title.replace(/^\d+\.\s*/, '').replace(/[\*\[\]]/g, '').strip?.() || title;
+
+      if (cleanTitle && cleanTitle.length > 2) {
+        parsed.push({
+          name: cleanTitle,
+          type: "Recommended Stay",
+          rating: (4.7 + (idx % 3) * 0.1).toFixed(1),
+          location: destName,
+          snippet: snippet.replace(/^\d+\.\s*/, '').replace(/[\*\[\]]/g, '').slice(0, 180) + '...',
+          url: url,
+          image: getHotelImage(cleanTitle, idx),
+          price: "Live Rate Tracked"
+        });
+        idx++;
+      }
     }
 
     if (parsed.length > 0) return parsed;
   }
 
-  // Dynamic accommodation fallback strictly for the requested destination
-  return [
-    { name: `Grand Luxury Resort & Spa in ${destName}`, type: "5-Star Luxury Heritage Stay", rating: 4.9, location: destName, price: "Best Rate Tracked", url: "https://www.booking.com", image: getHotelImage(destName, 0), snippet: `Premier luxury accommodation in ${destName} featuring panoramic views, guest suites, fine dining & spa.` },
-    { name: `Boutique Executive Hotel in ${destName}`, type: "4-Star Modern Boutique Hotel", rating: 4.8, location: destName, price: "Best Price Tracked", url: "https://www.tripadvisor.com", image: getHotelImage(destName, 1), snippet: `Charming central accommodation in ${destName} located close to top sights & cultural hotspots.` },
-    { name: `Scenic Suites & Villa in ${destName}`, type: "5-Star Scenic Resort", rating: 4.7, location: destName, price: "Best Price Tracked", url: "https://www.expedia.com", image: getHotelImage(destName, 2), snippet: `Serene retreat in ${destName} offering garden suites, mountain/city views & high-tier amenities.` }
-  ];
+  return [];
 }
 
 function isInterCityRoute(query = '') {
@@ -805,8 +737,8 @@ export default function ResultsView({ results, query, onReset }) {
         </div>
       </div>
 
-      {/* Flight Cards Section - Only shown when inter-city route is requested */}
-      {showFlights && parsedFlights.length > 0 && (
+      {/* Flight Cards Section - Only shown when explicit origin is provided */}
+      {showFlights && parsedFlights.length > 0 ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -814,7 +746,7 @@ export default function ResultsView({ results, query, onReset }) {
                 <Plane className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-[#1F2937]">Available Flights for {query}</h3>
+                <h3 className="text-xl font-bold text-[#1F2937]">Available Flights for {results?.origin || 'Route'} → {results?.destination || query}</h3>
                 {parsedFlights[0]?.travelDate && (
                   <p className="text-xs font-semibold text-[#7D9AF6] mt-0.5">
                     📅 Flights for Travel Date: {parsedFlights[0].travelDate}
@@ -872,6 +804,18 @@ export default function ResultsView({ results, query, onReset }) {
             ))}
           </div>
         </div>
+      ) : (
+        <div className="bg-gradient-to-r from-indigo-50/80 to-blue-50/50 rounded-2xl p-5 border border-indigo-100/80 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#7D9AF6]/15 text-[#7D9AF6] flex items-center justify-center shrink-0">
+              <Plane className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-[#1E293B]">Flight options not loaded</h4>
+              <p className="text-xs text-[#64748B]">Add your departure city to see flight options (e.g. "Delhi to {results?.destination || 'Ooty'} 4 days")</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Luxury Hotel Scout Cards */}
@@ -881,44 +825,52 @@ export default function ResultsView({ results, query, onReset }) {
             <div className="w-8 h-8 rounded-xl bg-[#FFF3C6] text-[#1F2937] flex items-center justify-center">
               <Building2 className="w-4 h-4 text-[#7D9AF6]" />
             </div>
-            <h3 className="text-xl font-bold text-[#1F2937]">Curated Accommodations for {query}</h3>
+            <h3 className="text-xl font-bold text-[#1F2937]">Curated Accommodations for {results?.destination || query}</h3>
           </div>
           <span className="text-xs font-semibold text-[#6B7280]">{parsedHotels.length} Stays Found</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {parsedHotels.map((hotel, idx) => (
-            <motion.div key={idx} whileHover={{ y: -6 }} className="bg-white rounded-[24px] border border-[#E7EAF6] overflow-hidden shadow-sm hover:shadow-xl hover:shadow-[#7D9AF6]/10 transition-all duration-300 flex flex-col justify-between">
-              <div className="relative aspect-[16/10] overflow-hidden">
-                <img src={hotel.image} alt={hotel.name} className="w-full h-full object-cover" />
-                <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-[#1F2937] flex items-center gap-1 shadow-sm">
-                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  <span>{hotel.rating}</span>
-                </div>
-              </div>
-
-              <div className="p-5 space-y-3 flex-1 flex flex-col justify-between">
-                <div>
-                  <span className="text-[11px] font-semibold text-[#7D9AF6] uppercase tracking-wider">{hotel.type}</span>
-                  <h4 className="font-bold text-base text-[#1F2937] line-clamp-1 mt-0.5">{hotel.name}</h4>
-                  <p className="text-xs text-[#6B7280] flex items-center gap-1 mt-1">
-                    <MapPin className="w-3.5 h-3.5 shrink-0" />
-                    <span>{hotel.location}</span>
-                  </p>
-                  <p className="text-xs text-[#475569] mt-2 line-clamp-2">{hotel.snippet}</p>
+        {parsedHotels.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {parsedHotels.map((hotel, idx) => (
+              <motion.div key={idx} whileHover={{ y: -6 }} className="bg-white rounded-[24px] border border-[#E7EAF6] overflow-hidden shadow-sm hover:shadow-xl hover:shadow-[#7D9AF6]/10 transition-all duration-300 flex flex-col justify-between">
+                <div className="relative aspect-[16/10] overflow-hidden">
+                  <img src={hotel.image} alt={hotel.name} className="w-full h-full object-cover" />
+                  <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-[#1F2937] flex items-center gap-1 shadow-sm">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span>{hotel.rating}</span>
+                  </div>
                 </div>
 
-                <div className="pt-3 border-t border-[#E7EAF6] flex items-center justify-between">
-                  <span className="text-base font-bold text-[#1F2937]">{hotel.price}</span>
-                  <a href={hotel.url} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#7D9AF6] to-[#A4BDF9] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-1">
-                    <span>Book Hotel</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                <div className="p-5 space-y-3 flex-1 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-semibold text-[#7D9AF6] uppercase tracking-wider">{hotel.type}</span>
+                    <h4 className="font-bold text-base text-[#1F2937] line-clamp-1 mt-0.5">{hotel.name}</h4>
+                    <p className="text-xs text-[#6B7280] flex items-center gap-1 mt-1">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span>{hotel.location}</span>
+                    </p>
+                    <p className="text-xs text-[#475569] mt-2 line-clamp-2">{hotel.snippet}</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-[#E7EAF6] flex items-center justify-between">
+                    <span className="text-base font-bold text-[#1F2937]">{hotel.price}</span>
+                    <a href={hotel.url} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#7D9AF6] to-[#A4BDF9] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-1">
+                      <span>Book Hotel</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-6 bg-white rounded-2xl border border-[#E7EAF6] text-center space-y-2">
+            <Building2 className="w-8 h-8 text-[#7D9AF6] mx-auto" />
+            <p className="text-sm font-semibold text-[#1F2937]">No live accommodation results found for {results?.destination || query}</p>
+            <p className="text-xs text-[#6B7280]">Try searching with a specific hotel name or destination region.</p>
+          </div>
+        )}
       </div>
 
       {/* Timeline Day-by-Day Itinerary */}
