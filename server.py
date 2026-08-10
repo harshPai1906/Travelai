@@ -22,6 +22,18 @@ api.add_middleware(
     allow_headers=["*"],
 )
 
+@api.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "service": "AI Travel Planner Backend API",
+        "docs": "/docs"
+    }
+
+@api.get("/api/health")
+def health_check():
+    return {"status": "ok", "message": "Backend service is healthy"}
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/langgraph_memory")
 
 # In-memory session store for tokens -> user dict
