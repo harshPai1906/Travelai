@@ -2,6 +2,8 @@ fastapi
 uvicorn
 gunicorn
 langgraph
+langgraph-checkpoint
+langgraph-checkpoint-postgres
 langchain
 langchain-groq
 langchain-community

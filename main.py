@@ -19,7 +19,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import psycopg
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.postgres import PostgresSaver
+
+try:
+    from langgraph.checkpoint.postgres import PostgresSaver
+except ImportError:
+    PostgresSaver = None
 from langchain_core.messages import (
     AnyMessage,
     HumanMessage,
@@ -862,14 +866,14 @@ graph.add_edge("story_agent", END)
 
 # Checkpointer setup with Postgres and MemorySaver fallback
 try:
-    if DATABASE_URL:
+    if DATABASE_URL and PostgresSaver is not None:
         conn = psycopg.connect(DATABASE_URL, autocommit=True)
         memory = PostgresSaver(conn)
         memory.setup()
         app = graph.compile(checkpointer=memory)
         print("[Success] PostgreSQL checkpointer initialized.")
     else:
-        raise Exception("No DATABASE_URL found.")
+        raise Exception("PostgresSaver unavailable or no DATABASE_URL configured.")
 except Exception as e:
     print(f"[Notice] Postgres connection skipped/failed: {e}")
     from langgraph.checkpoint.memory import MemorySaver
