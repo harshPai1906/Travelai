@@ -81,7 +81,7 @@ export default function App() {
     }, 3000));
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
       const threadId = user ? `user_${user.id}` : getGuestSessionId();
       const response = await fetch(`${API_URL}/api/generate`, {
         method: 'POST',
