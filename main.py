@@ -110,7 +110,7 @@ def safe_llm_invoke(messages, fallback_text=""):
     ]
     for m in models:
         try:
-            temp_llm = ChatGroq(model=m, temperature=0.3, groq_api_key=groq_key, request_timeout=8.0)
+            temp_llm = ChatGroq(model=m, temperature=0.3, groq_api_key=groq_key, request_timeout=5.0)
             res = temp_llm.invoke(messages)
             if res and res.content and res.content.strip():
                 return res
@@ -263,7 +263,7 @@ class TravelState(TypedDict):
     places_data: list
     itinerary: str
     trip_story: str
-    llm_calls: int
+    llm_calls: Annotated[int, operator.add]
 
 def validate_and_repair_itinerary_data(data: dict, destination: str, duration_days: int, places_data: list = None) -> dict:
     dest_title = (destination or "Destination").title()
@@ -449,15 +449,40 @@ def format_itinerary_to_markdown(itinerary_data: dict) -> str:
 
     return "\n".join(markdown_lines)
 
+# 0. Intent Agent — Parse Intent Once at Entry
+def intent_agent(state: TravelState):
+    print(f"\n==================== [INTENT AGENT DEBUG] ====================")
+    print(f"[Intent Agent] started")
+    user_q = state.get("user_query", "")
+    dest = state.get("destination")
+    
+    if not dest or dest == "Destination":
+        intent = parse_travel_intent(user_q)
+        print(f"[Intent Agent] Parsed Intent: {intent}")
+        return {
+            "origin": intent.get("origin"),
+            "destination": intent.get("destination"),
+            "country": intent.get("country", "International"),
+            "duration_days": intent.get("duration_days", 3),
+            "flight_required": intent.get("flight_required", False),
+            "messages": [AIMessage(content=f"Intent parsed for {intent.get('destination')}")],
+            "llm_calls": 1
+        }
+    else:
+        print(f"[Intent Agent] Destination pre-loaded: {dest}")
+        return {
+            "messages": [AIMessage(content=f"Intent pre-loaded for {dest}")],
+            "llm_calls": 0
+        }
+
 # 1. Flight Agent — Activate ONLY when explicit origin is present
 def flight_agent(state: TravelState):
     print(f"\n==================== [FLIGHT AGENT DEBUG] ====================")
     print(f"[Flight Agent] started")
     query = state.get("user_query", "")
-    intent = parse_travel_intent(query)
-    flight_req = intent.get("flight_required", False)
-    origin = intent.get("origin")
-    dest = intent.get("destination")
+    flight_req = state.get("flight_required", False)
+    origin = state.get("origin")
+    dest = state.get("destination")
 
     if not flight_req or not origin or not dest:
         print(f"[Flight Agent] SKIPPED (destination-only query, no origin specified)")
@@ -465,10 +490,8 @@ def flight_agent(state: TravelState):
         print(f"=============================================================\n")
         return {
             "flight_results": "",
-            "flight_required": False,
-            "origin": None,
             "messages": [AIMessage(content="Flight Agent skipped (destination-only query)")],
-            "llm_calls": state.get("llm_calls", 0) + 1
+            "llm_calls": 0
         }
 
     print(f"[Flight Agent] EXECUTING FLIGHT SEARCH: '{origin}' -> '{dest}'")
@@ -477,27 +500,23 @@ def flight_agent(state: TravelState):
     print(f"=============================================================\n")
     return {
         "flight_results": flight_data,
-        "flight_required": True,
-        "origin": origin,
         "messages": [AIMessage(content=f"Flight results fetched for {origin} -> {dest}")],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 0
     }
 
 # 2. Hotel Agent — Dynamic AI & Search strictly for Target Destination
 def hotel_agent(state: TravelState):
     print(f"\n==================== [HOTEL AGENT DEBUG] ====================")
     print(f"[Hotel Agent] started")
-    user_query = state.get("user_query", "")
-    intent = parse_travel_intent(user_query)
-    origin = intent.get("origin")
-    destination = intent.get("destination")
+    origin = state.get("origin")
+    destination = state.get("destination")
 
-    if not destination:
+    if not destination or destination == "Destination":
         print(f"[Hotel Agent] ERROR: Destination not specified")
         return {
             "hotel_results": "No live accommodation results found for this destination.",
             "messages": [AIMessage(content="Destination missing")],
-            "llm_calls": state.get("llm_calls", 0) + 1
+            "llm_calls": 0
         }
 
     dest_title = destination.title()
@@ -530,29 +549,25 @@ def hotel_agent(state: TravelState):
 
     return {
         "hotel_results": validated_text,
-        "origin": orig_title or None,
-        "destination": dest_title,
         "messages": [
             AIMessage(content=f"Hotel information fetched for {dest_title}")
         ],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 # 3. Places Agent — Dynamic AI Places Discovery Node
 def places_agent(state: TravelState):
     print(f"\n==================== [PLACES AGENT DEBUG] ====================")
     print(f"[Places Agent] started")
-    user_q = state.get("user_query", "")
-    intent = parse_travel_intent(user_q)
-    dest_c = intent.get('destination')
+    dest_c = state.get("destination")
 
-    if not dest_c:
+    if not dest_c or dest_c == "Destination":
         print(f"[Places Agent] ERROR: Destination not specified")
         return {
             "places_results": "",
             "places_data": [],
             "messages": [AIMessage(content="Destination missing")],
-            "llm_calls": state.get("llm_calls", 0) + 1
+            "llm_calls": 0
         }
 
     dest_title = dest_c.title()
@@ -605,7 +620,7 @@ def places_agent(state: TravelState):
         "places_results": research_text,
         "places_data": discovered_places,
         "messages": [AIMessage(content=f"Discovered places for {dest_title}")],
-        "llm_calls": state.get("llm_calls", 0) + 1
+        "llm_calls": 1
     }
 
 # 4. Itinerary Agent — Dynamic Day-by-Day Generation
@@ -613,18 +628,17 @@ def itinerary_agent(state: TravelState):
     print(f"\n==================== [ITINERARY AGENT DEBUG] ====================")
     print(f"[Itinerary Agent] Started")
     user_q = state.get("user_query", "")
-    intent = parse_travel_intent(user_q)
-    num_days = intent['duration_days']
-    orig_c = intent['origin']
-    dest_c = intent.get('destination')
+    num_days = state.get("duration_days", 3)
+    orig_c = state.get("origin")
+    dest_c = state.get("destination")
 
-    if not dest_c:
+    if not dest_c or dest_c == "Destination":
         print(f"[Itinerary Agent] FAILED: Destination missing")
         return {
             "itinerary": "Unable to retrieve travel information right now. Please specify a destination.",
             "trip_story": "",
             "messages": [AIMessage(content="Destination missing")],
-            "llm_calls": state.get("llm_calls", 0) + 1
+            "llm_calls": state.get("llm_calls", 0)
         }
 
     dest_title = dest_c.title()
@@ -640,7 +654,7 @@ def itinerary_agent(state: TravelState):
             "destination": dest_title,
             "duration_days": num_days,
             "messages": [AIMessage(content=error_msg)],
-            "llm_calls": state.get("llm_calls", 0) + 1
+            "llm_calls": state.get("llm_calls", 0)
         }
 
     places_data = state.get("places_data", [])
@@ -748,7 +762,7 @@ Return ONLY raw JSON:
     story_json_obj = {
         "trip": {
             "destination": dest_title,
-            "country": intent.get("country", "International"),
+            "country": state.get("country", "International"),
             "duration_days": num_days
         },
         "days": validated_data["days"]
@@ -804,9 +818,8 @@ Itinerary:
 # 6. Story Agent — Price-Free Travel Story Generator
 def story_agent(state: TravelState):
     trip_story_val = state.get("trip_story", "")
-    intent = parse_travel_intent(state.get("user_query", ""))
-    num_days = intent['duration_days']
-    dest_c = intent.get('destination', 'Destination')
+    num_days = state.get("duration_days", 3)
+    dest_c = state.get("destination", "Destination")
 
     if trip_story_val:
         try:
@@ -834,7 +847,7 @@ def story_agent(state: TravelState):
         trip_story_val = json.dumps({
             "trip": {
                 "destination": dest_c,
-                "country": intent.get("country", "International"),
+                "country": state.get("country", "International"),
                 "duration_days": num_days
             },
             "days": val_data["days"]
@@ -849,6 +862,7 @@ def story_agent(state: TravelState):
 # Construct State Graph Pipeline
 graph = StateGraph(TravelState)
 
+graph.add_node("intent_agent", intent_agent)
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
 graph.add_node("places_agent", places_agent)
@@ -856,10 +870,18 @@ graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 graph.add_node("story_agent", story_agent)
 
-graph.add_edge(START, "flight_agent")
-graph.add_edge("flight_agent", "hotel_agent")
-graph.add_edge("hotel_agent", "places_agent")
+graph.add_edge(START, "intent_agent")
+
+# Parallel search branches
+graph.add_edge("intent_agent", "flight_agent")
+graph.add_edge("intent_agent", "hotel_agent")
+graph.add_edge("intent_agent", "places_agent")
+
+# Converge parallel branches into itinerary agent
+graph.add_edge("flight_agent", "itinerary_agent")
+graph.add_edge("hotel_agent", "itinerary_agent")
 graph.add_edge("places_agent", "itinerary_agent")
+
 graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", "story_agent")
 graph.add_edge("story_agent", END)

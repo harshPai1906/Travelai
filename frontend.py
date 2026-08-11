@@ -600,8 +600,10 @@ generate = st.button("🚀  Generate Travel Plan", use_container_width=True)
 
 # ── Agent Pipeline Output ─────────────────────────────────────────────────────
 AGENT_META = {
+    "intent_agent":    ("🔍", "Intent Agent — Parsing Intent"),
     "flight_agent":    ("✈️", "Flight Agent — Searching Routes"),
     "hotel_agent":     ("🏨", "Hotel Agent — Locating Accommodations"),
+    "places_agent":    ("📍", "Places Agent — Discovering Attractions"),
     "itinerary_agent": ("🗓️", "Itinerary Agent — Designing Schedule"),
     "final_agent":     ("🧠", "Final Agent — Assembling Master Plan"),
 }

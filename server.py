@@ -337,17 +337,11 @@ def generate_travel_plan(req: TravelRequest):
     unique_thread_id = f"trip_{uuid.uuid4().hex}_{int(time.time() * 1000)}"
     config = {"configurable": {"thread_id": unique_thread_id}}
 
-    intent = parse_travel_intent(req.user_query)
-
     try:
         result = langgraph_app.invoke(
             {
                 "messages": [HumanMessage(content=req.user_query)],
                 "user_query": req.user_query,
-                "origin": intent["origin"],
-                "destination": intent["destination"],
-                "duration_days": intent["duration_days"],
-                "flight_required": intent["flight_required"],
                 "flight_results": "",
                 "hotel_results": "",
                 "places_results": "",
@@ -359,7 +353,7 @@ def generate_travel_plan(req: TravelRequest):
             config=config,
         )
 
-        destination = result.get("destination") or intent.get("destination") or "Destination"
+        destination = result.get("destination") or "Destination"
         flight_results = result.get("flight_results", "")
         hotel_results = result.get("hotel_results", "")
         places_results = result.get("places_results", "")
@@ -376,10 +370,10 @@ def generate_travel_plan(req: TravelRequest):
         return {
             "status": "success",
             "user_query": req.user_query,
-            "origin": intent.get("origin"),
+            "origin": result.get("origin"),
             "destination": destination,
-            "duration_days": intent.get("duration_days", 3),
-            "flight_required": intent.get("flight_required", False),
+            "duration_days": result.get("duration_days", 3),
+            "flight_required": result.get("flight_required", False),
             "flight_results": flight_results,
             "hotel_results": hotel_results,
             "places_results": places_results,
