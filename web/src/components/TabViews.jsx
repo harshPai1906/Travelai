@@ -22,7 +22,7 @@ export function TripsView({ onSelectTrip, user, threadId }) {
   const [historyTrips, setHistoryTrips] = React.useState([]);
   const [isLoading, setIsLoading] = React.useState(true);
 
-  const activeThreadId = user ? `user_${user.id}` : (threadId || localStorage.getItem('guest_session_id') || 'aarohi_user');
+  const activeThreadId = user ? `user_${user.id}` : (threadId || localStorage.getItem('guest_session_id') || 'guest_user');
 
   React.useEffect(() => {
     async function fetchHistory() {

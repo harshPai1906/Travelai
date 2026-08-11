@@ -144,7 +144,7 @@ def hash_password(password: str) -> str:
 # Pydantic Schemas
 class TravelRequest(BaseModel):
     user_query: str
-    thread_id: str = "aarohi_user"
+    thread_id: str = "guest_user"
 
 class UserSignupRequest(BaseModel):
     name: str
@@ -160,7 +160,7 @@ def health_check():
     return {"status": "ok", "service": "AI Travel Planner Backend & PostgreSQL Auth"}
 
 @api.get("/api/history")
-def get_user_history(thread_id: str = "aarohi_user"):
+def get_user_history(thread_id: str = "guest_user"):
     history_list = []
     pg_conn = get_pg_connection()
     if pg_conn:
