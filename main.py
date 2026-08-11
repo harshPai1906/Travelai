@@ -73,10 +73,6 @@ def validate_hotel_results(hotel_text: str, destination: str, origin: str) -> tu
     dest_lower = destination.lower().strip()
     orig_lower = origin.lower().strip() if origin else ""
 
-    # Common cities that should never appear as hotels unless destination is that city
-    unrelated_cities = ["goa", "mumbai", "delhi", "paris", "london", "tokyo", "new york", "dubai", "rome", "bali"]
-    unrelated_cities = [c for c in unrelated_cities if c not in dest_lower]
-
     blocks = hotel_text.split('\n\n')
     valid_blocks = []
     rejected_blocks = []
@@ -85,13 +81,6 @@ def validate_hotel_results(hotel_text: str, destination: str, origin: str) -> tu
         b_lower = b.lower()
         # Reject if block belongs strictly to origin city when origin != destination
         if orig_lower and orig_lower != dest_lower and orig_lower in b_lower and dest_lower not in b_lower:
-            rejected_blocks.append(b)
-            continue
-
-        # Reject if block contains unrelated major destination city that does not match target destination
-        has_unrelated_city = any(c in b_lower for c in unrelated_cities if c not in b_lower.replace(c, ''))
-        # If block mentions an unrelated city and NOT target destination, reject it
-        if has_unrelated_city and dest_lower not in b_lower:
             rejected_blocks.append(b)
             continue
 
@@ -110,12 +99,12 @@ def safe_llm_invoke(messages, fallback_text=""):
     ]
     for m in models:
         try:
-            temp_llm = ChatGroq(model=m, temperature=0.3, groq_api_key=groq_key, request_timeout=5.0)
+            temp_llm = ChatGroq(model=m, temperature=0.3, groq_api_key=groq_key, request_timeout=6.0)
             res = temp_llm.invoke(messages)
             if res and res.content and res.content.strip():
                 return res
         except Exception as e:
-            print(f"[Notice] Groq LLM model '{m}' error: {e}")
+            print(f"[Notice] Groq LLM model '{m}' notice: {e}")
             continue
 
     return AIMessage(content=fallback_text)
@@ -139,16 +128,20 @@ def clean_dest_name(text: str) -> Optional[str]:
         r'^\s*heading\s+to\s+',
         r'^\s*go\s+to\s+',
         r'^\s*visit\s+',
-        r'^\s*explore\s+'
+        r'^\s*explore\s+',
+        r'^\s*vacation\s+in\s+'
     ]
     for p in prefixes:
         s = re.sub(p, '', s, flags=re.IGNORECASE).strip()
     
-    s = re.sub(r'\s*(?:for\s+)?\d+\s*days?.*$', '', s, flags=re.IGNORECASE).strip()
+    s = re.sub(r'\s*(?:for\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*days?.*$', '', s, flags=re.IGNORECASE).strip()
+    s = re.sub(r'^\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*-?\s*days?\s+(?:in\s+|to\s+)?', '', s, flags=re.IGNORECASE).strip()
+    s = re.sub(r'\s+(?:trip|vacation|itinerary|tour|holiday|guide|under\s+.*|budget|getaway)$', '', s, flags=re.IGNORECASE).strip()
+    
     words = s.split()
     if len(words) > 4:
         s = " ".join(words[:4])
-    if not s or s.lower() in ["the", "a", "an", "days", "day", "trip", "plan", "somewhere"]:
+    if not s or s.lower() in ["the", "a", "an", "days", "day", "trip", "plan", "somewhere", "destination"]:
         return None
     return s.title()
 
@@ -207,7 +200,7 @@ CRITICAL RULES:
         except Exception as e:
             print(f"[Notice] AI Intent Parser JSON parse fallback: {e}")
 
-    # 2. Rule-based Fallback Parser
+    # 2. Rule-based Dynamic Fallback Parser
     query_lower = query_clean.lower()
     
     match_d = re.search(r'(\d+)\s*-?\s*(?:day|days)', query_lower)
@@ -237,7 +230,7 @@ CRITICAL RULES:
         dest_candidate = re.sub(r'\s*(?:for\s+)?\d+\s*days?$', '', dest_candidate, flags=re.IGNORECASE).strip()
 
     orig_final = orig_candidate or (dep_c.title() if has_explicit_origin and dep_c else None)
-    dest_final = dest_candidate.title() if dest_candidate else "Destination"
+    dest_final = dest_candidate.title() if dest_candidate else query_clean.strip().title()
 
     return {
         "user_query": query_clean,

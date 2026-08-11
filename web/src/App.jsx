@@ -70,15 +70,18 @@ export default function App() {
 
     timerIds.push(setTimeout(() => {
       setAgentStates({ flight: 'done', hotel: 'running', places: 'idle', itinerary: 'idle' });
-    }, 1000));
+    }, 1200));
 
     timerIds.push(setTimeout(() => {
       setAgentStates({ flight: 'done', hotel: 'done', places: 'running', itinerary: 'idle' });
-    }, 2000));
+    }, 2400));
 
     timerIds.push(setTimeout(() => {
       setAgentStates({ flight: 'done', hotel: 'done', places: 'done', itinerary: 'running' });
-    }, 3000));
+    }, 3600));
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s safety timeout
 
     try {
       const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
@@ -87,31 +90,48 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_query: query, thread_id: threadId }),
+        signal: controller.signal,
       });
 
-      // Clear all timers so none can overwrite state after response arrives
+      clearTimeout(timeoutId);
       timerIds.forEach(id => clearTimeout(id));
 
-      if (!response.ok) throw new Error('API server returned error');
+      if (!response.ok) {
+        let errDetail = 'API server returned error';
+        try {
+          const errData = await response.json();
+          errDetail = errData.detail || errData.message || errDetail;
+        } catch (_) {}
+        throw new Error(errDetail);
+      }
+
       const data = await response.json();
 
-      if (data.status === 'error') {
-        setErrorMsg(data.message || data.detail || 'Unable to retrieve travel information right now. Please try again.');
-        setResults(data);
+      if (data.status === 'error' || !data.itinerary || data.itinerary.includes("Unable to retrieve travel information")) {
+        setErrorMsg(data.message || data.detail || 'Unable to generate the itinerary right now. Please try again.');
+        setResults(null);
+        setAgentStates({ flight: 'idle', hotel: 'idle', places: 'idle', itinerary: 'idle' });
       } else {
         setResults(data);
+        const isFlightReq = data?.flight_required ?? false;
+        setAgentStates({ 
+          flight: isFlightReq ? 'done' : 'skipped', 
+          hotel: 'done', 
+          places: 'done', 
+          itinerary: 'done' 
+        });
       }
-      const isFlightReq = data?.flight_required ?? false;
-      setAgentStates({ 
-        flight: isFlightReq ? 'done' : 'skipped', 
-        hotel: 'done', 
-        places: 'done', 
-        itinerary: 'done' 
-      });
     } catch (err) {
+      clearTimeout(timeoutId);
       timerIds.forEach(id => clearTimeout(id));
       console.warn('Backend generation notice:', err);
-      setErrorMsg('Unable to retrieve travel information right now. Please try again.');
+      
+      const isAbort = err.name === 'AbortError';
+      const msg = isAbort 
+        ? 'Request timed out while generating your travel plan. Please try again.' 
+        : 'Unable to retrieve travel information right now. Please try again.';
+      
+      setErrorMsg(msg);
       setResults(null);
       setAgentStates({ flight: 'idle', hotel: 'idle', places: 'idle', itinerary: 'idle' });
     } finally {
@@ -143,6 +163,7 @@ export default function App() {
   const handleReset = () => {
     setResults(null);
     setQuery('');
+    setErrorMsg('');
     setAgentStates({ flight: 'idle', hotel: 'idle', places: 'idle', itinerary: 'idle' });
   };
 
@@ -217,6 +238,25 @@ export default function App() {
                   onGenerate={handleGenerate}
                   isLoading={isLoading}
                 />
+
+                {/* Error Banner with Retry Button */}
+                {errorMsg && (
+                  <div className="bg-red-50 border border-red-200 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-red-800 shadow-sm mt-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center text-red-600 font-bold text-lg shrink-0">⚠️</div>
+                      <div>
+                        <h4 className="font-extrabold text-sm">Unable to generate travel plan</h4>
+                        <p className="text-xs text-red-600 mt-0.5">{errorMsg}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleGenerate}
+                      className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-sm hover:shadow flex items-center gap-2"
+                    >
+                      🔄 Retry Generation
+                    </button>
+                  </div>
+                )}
 
                 {/* Live Multi-Agent Pipeline Status Indicator */}
                 {isLoading && (
